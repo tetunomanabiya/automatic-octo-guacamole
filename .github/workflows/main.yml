@@ -1,5 +1,4 @@
-# .github/workflows/ci.yml
-name: 🛠️ CI Pipeline
+name: 🛠 CI Pipeline
 
 on:
   push:
@@ -9,64 +8,72 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [20.x, 18.x]
       fail-fast: false
+    runs-on: ${{ matrix.os }}
 
     steps:
+      # 1) コードをチェックアウト
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      # 2) Node.js をセットアップ（キャッシュ有効：lockfile があれば動作）
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
+      # 3) 依存関係のインストール
       - name: Install dependencies
-        # package-lock.json / yarn.lock があるかどうかで使うコマンドを切り替え
+        shell: bash
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            echo "Lockfile found: running npm ci"
+            echo "Lockfile found → npm ci"
             npm ci
           elif [ -f yarn.lock ]; then
-            echo "Yarn lockfile found: running yarn install"
+            echo "Yarn lockfile found → yarn install"
             yarn install --frozen-lockfile
           else
-            echo "No lockfile found: running npm install"
+            echo "No lockfile → npm install"
             npm install
           fi
 
-      - name: Run Lint
+      # 4) Lint
+      - name: Run lint
         run: npm run lint
 
+      # 5) tsconfig.json があれば型チェック
       - name: Check for tsconfig.json
-        id: check_ts
+        id: ts-check
         shell: bash
         run: |
-          if [[ -f tsconfig.json ]]; then
+          if [ -f tsconfig.json ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Type-check (only if tsconfig.json exists)
-        if: steps.check_ts.outputs.exists == 'true'
+      - name: Type‐check
+        if: steps.ts-check.outputs.exists == 'true'
         run: npm run type-check
 
+      # 6) ビルド
       - name: Build
         run: npm run build
 
+      # 7) テスト
       - name: Run tests
         run: npm test
 
+      # 8) coverage フォルダをアーティファクト化（空でも WARN でスキップ）
       - name: Upload coverage report
-        if: always() && (matrix.node-version == '18.x' || matrix.node-version == '20.x')
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report-${{ matrix.os }}-node${{ matrix.node-version }}
+          name: coverage-${{ matrix.os }}-node${{ matrix.node-version }}
           path: coverage/
-          # coverage/ フォルダがなければスキップ（エラーにならない）
+          if-no-files-found: warn
