@@ -1,85 +1,71 @@
-# .github/workflows/ci.yml
-name: 🛠️ CI Pipeline
+name: 🛠 Build & Test
 
+# fire on push & PR to main/develop
 on:
   push:
     branches:
       - main
-      - master
       - develop
   pull_request:
     branches:
       - main
-      - master
       - develop
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build-and-test:
-    runs-on: ${{ matrix.os }}
+    # run all matrixes in the context of the mentalprep-app folder
+    defaults:
+      run:
+        working-directory: ./mentalprep-app
+
+    runs-on: ubuntu-latest
+
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [18.x, 20.x]
-      fail-fast: false
+        node-version: ["18.x", "20.x"]
 
     steps:
-      - name: Checkout code
+      # 1. checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      # 2. set up Node & cache
+      - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: "npm"
 
+      # 3. install dependencies
       - name: Install dependencies
-        run: npm ci
-
-      - name: Run Lint
-        run: npm run lint
-
-      # --------------------------------------------------
-      # ここから TypeScript 判定ステップを追加
-      # --------------------------------------------------
-      - name: Check for tsconfig.json
-        id: check_ts
-        shell: bash
         run: |
-          if [[ -f tsconfig.json ]]; then
-            echo "tsconfig exists -> will run type-check"
-            echo "exists=true" >> $GITHUB_OUTPUT
+          if [[ -f package-lock.json ]]; then
+            npm ci
           else
-            echo "no tsconfig -> skip type-check"
-            echo "exists=false" >> $GITHUB_OUTPUT
+            npm install
           fi
 
-      - name: Type-check (only if tsconfig.json exists)
-        if: steps.check_ts.outputs.exists == 'true'
-        run: npm run type-check
-      # --------------------------------------------------
+      # 4. run linter
+      - name: Run ESLint
+        run: npm run lint
 
+      # 5. type-check if TS config exists
+      - name: Type-check (if present)
+        if: ${{ hashFiles('**/tsconfig.json') != '' }}
+        run: npm run type-check
+
+      # 6. build the app
       - name: Build
         run: npm run build
 
-      - name: Run tests
+      # 7. run tests
+      - name: Test
         run: npm test
 
+      # 8. upload coverage; warn if nothing there
       - name: Upload coverage report
-        if: always() && matrix.node-version == '18.x'
+        if-no-files-found: warn
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report-${{ matrix.os }}-node${{ matrix.node-version }}
+          name: coverage-${{ matrix.node-version }}
           path: coverage/
-
-      - name: Create Release Draft (optional)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/**
-
-
