@@ -40,7 +40,7 @@ jobs:
 
       - name: Type-check (if applicable)
         run: npm run type-check
-        # TypeScript を使っていない場合はこのステップを削除してください
+        # TypeScript を使っていない場合はこのステップを削除
 
       - name: Build with Vite
         run: npm run build
@@ -48,9 +48,9 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Upload coverage (optional)
+      - name: Upload coverage report
         if: success() && matrix.node-version == '18.x'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4   # ← v4 にアップデート
         with:
           name: coverage-report
-          path: ./coverage
+          path: coverage/
