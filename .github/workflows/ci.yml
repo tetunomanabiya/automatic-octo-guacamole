@@ -1,7 +1,6 @@
 # .github/workflows/ci.yml
 name: 🛠️ CI Pipeline
 
-# main, master, develop ブランチへの push と PR で動作
 on:
   push:
     branches:
@@ -14,7 +13,6 @@ on:
       - master
       - develop
 
-# 並行実行制御（同じブランチへの古い run はキャンセル）
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -29,39 +27,47 @@ jobs:
       fail-fast: false
 
     steps:
-      # ソースチェックアウト
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Node.js セットアップ
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: "npm"                          # NPM キャッシュを自動化
+          cache: "npm"
 
-      # 依存インストール
       - name: Install dependencies
         run: npm ci
 
-      # ESLint + Prettier
       - name: Run Lint
         run: npm run lint
 
-      # 型チェック（TypeScript プロジェクト時のみ）
-      - name: Type-check
-        if: fileExists('tsconfig.json')
-        run: npm run type-check
+      # --------------------------------------------------
+      # ここから TypeScript 判定ステップを追加
+      # --------------------------------------------------
+      - name: Check for tsconfig.json
+        id: check_ts
+        shell: bash
+        run: |
+          if [[ -f tsconfig.json ]]; then
+            echo "tsconfig exists -> will run type-check"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "no tsconfig -> skip type-check"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
 
-      # ビルド（Vite）
+      - name: Type-check (only if tsconfig.json exists)
+        if: steps.check_ts.outputs.exists == 'true'
+        run: npm run type-check
+      # --------------------------------------------------
+
       - name: Build
         run: npm run build
 
-      # テスト（例: Jest）
       - name: Run tests
         run: npm test
 
-      # カバレッジレポートをアーティファクトとして保存
       - name: Upload coverage report
         if: always() && matrix.node-version == '18.x'
         uses: actions/upload-artifact@v4
@@ -69,11 +75,11 @@ jobs:
           name: coverage-report-${{ matrix.os }}-node${{ matrix.node-version }}
           path: coverage/
 
-      # 成功時のみタグをつけて GitHub Releases に通知（例）
       - name: Create Release Draft (optional)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/**
+
 
