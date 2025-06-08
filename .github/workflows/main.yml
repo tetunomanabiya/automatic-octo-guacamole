@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [18.x]   # 使用する Node.js のバージョン
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ matrix.node }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ matrix.node }}-
+
+      - name: Lint (ESLint + Prettier)
+        run: npm run lint
+        # package.json に "lint": "eslint . --ext .js,.jsx && prettier --check ." が設定されている前提
+
+      - name: Type check (if using TS)
+        run: npm run type-check
+        # TS プロジェクトなら package.json に "type-check": "tsc --noEmit" を追加
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+        # Jest や Vitest などテストフレームワークを導入している場合
+
+      - name: Upload coverage report (optional)
+        if: success() && matrix.node == '18.x'
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: coverage/
+
