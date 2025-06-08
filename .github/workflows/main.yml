@@ -3,19 +3,9 @@ name: 🛠️ CI Pipeline
 
 on:
   push:
-    branches:
-      - main
-      - master
-      - develop
+    branches: [ main, master, develop ]
   pull_request:
-    branches:
-      - main
-      - master
-      - develop
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+    branches: [ main, master, develop ]
 
 jobs:
   build-and-test:
@@ -23,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [18.x, 20.x]
+        node-version: [20.x, 18.x]
       fail-fast: false
 
     steps:
@@ -34,33 +24,38 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: "npm"
+          cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # package-lock.json / yarn.lock があるかどうかで使うコマンドを切り替え
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            echo "Lockfile found: running npm ci"
+            npm ci
+          elif [ -f yarn.lock ]; then
+            echo "Yarn lockfile found: running yarn install"
+            yarn install --frozen-lockfile
+          else
+            echo "No lockfile found: running npm install"
+            npm install
+          fi
 
       - name: Run Lint
         run: npm run lint
 
-      # --------------------------------------------------
-      # ここから TypeScript 判定ステップを追加
-      # --------------------------------------------------
       - name: Check for tsconfig.json
         id: check_ts
         shell: bash
         run: |
           if [[ -f tsconfig.json ]]; then
-            echo "tsconfig exists -> will run type-check"
             echo "exists=true" >> $GITHUB_OUTPUT
           else
-            echo "no tsconfig -> skip type-check"
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Type-check (only if tsconfig.json exists)
         if: steps.check_ts.outputs.exists == 'true'
         run: npm run type-check
-      # --------------------------------------------------
 
       - name: Build
         run: npm run build
@@ -69,15 +64,9 @@ jobs:
         run: npm test
 
       - name: Upload coverage report
-        if: always() && matrix.node-version == '18.x'
+        if: always() && (matrix.node-version == '18.x' || matrix.node-version == '20.x')
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ matrix.os }}-node${{ matrix.node-version }}
           path: coverage/
-
-      - name: Create Release Draft (optional)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/**
+          # coverage/ フォルダがなければスキップ（エラーにならない）
